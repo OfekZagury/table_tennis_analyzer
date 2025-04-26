@@ -13,7 +13,7 @@ OUTPUT_VIDEO = "output_with_detections.mp4"
 OUTPUT_CSV = "player_positions.csv"
 
 # Load the model
-model = YOLO("yolo11m-pose.pt")
+model = YOLO("yolo11l-pose.pt")
 
 def process_frame(model, frame, frame_number, csv_writer):
     # Predict with the model
@@ -55,6 +55,40 @@ def process_frame(model, frame, frame_number, csv_writer):
             for kpt in player_keypoints:
                 x, y = int(kpt[0]), int(kpt[1])
                 cv2.circle(frame, (x, y), 3, (0, 0, 255), -1)
+
+            # Define skeleton connections (modify indices if your model has a different keypoint format)
+            SKELETON = [
+            (5, 6),  # shoulders
+            (5, 7),  # left arm: shoulder -> elbow
+            (7, 9),  # left arm: elbow -> wrist
+            (6, 8),  # right arm: shoulder -> elbow
+            (8, 10),  # right arm: elbow -> wrist
+            (5, 11),  # left torso: shoulder -> hip
+            (6, 12),  # right torso: shoulder -> hip
+            (11, 12),  # hips
+            (11, 13),  # left leg: hip -> knee
+            (13, 15),  # left leg: knee -> ankle
+            (12, 14),  # right leg: hip -> knee
+            (14, 16),  # right leg: knee -> ankle
+            (0, 1),  # face connection example
+            (1, 2),
+            (0, 3),
+            (3, 4)
+            ]
+            skeleton_color = (0, 255, 255)  # Yellow color for skeleton lines
+            line_thickness = 2
+
+            # Draw lines connecting keypoints based on the SKELETON definition
+            for (p1, p2) in SKELETON:
+                # Check if the indices are within range (if your model has a different number of keypoints)
+                if p1 < len(player_keypoints) and p2 < len(player_keypoints):
+                    x1_kpt, y1_kpt = int(player_keypoints[p1][0]), int(player_keypoints[p1][1])
+                    x2_kpt, y2_kpt = int(player_keypoints[p2][0]), int(player_keypoints[p2][1])
+
+                    # Optional: Skip drawing if coordinates are at (0,0) (could indicate a missing detection)
+                    if (x1_kpt, y1_kpt) == (0, 0) or (x2_kpt, y2_kpt) == (0, 0):
+                        continue
+                    cv2.line(frame, (x1_kpt, y1_kpt), (x2_kpt, y2_kpt), skeleton_color, line_thickness)
 
     # Ensure we always write a row even if players are not detected
     while len(player_positions) < 4:
