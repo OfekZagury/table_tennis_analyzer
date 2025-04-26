@@ -4,7 +4,7 @@ import torch
 import sys
 
 # Load the model
-model = YOLO("yolov8n-pose.pt")
+model = YOLO("yolo11n-pose.pt")
 image_path = "table-tennis.png"
 
 def process_image(model, image_path):
