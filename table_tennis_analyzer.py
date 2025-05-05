@@ -1,13 +1,17 @@
+import os
 from ultralytics import YOLO
 import cv2
 import torch
 import sys
 import csv
-import os
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib import cm
 
 # Constants
 START_FRAME = 0
-END_FRAME = 400 # Set to 0 for no limit
+END_FRAME = 600 # Set to 0 for no limit
 INPUT_VIDEO = "input.mp4"
 OUTPUT_VIDEO = "output_with_detections.mp4"
 OUTPUT_CSV = "player_positions.csv"
@@ -143,6 +147,51 @@ def main():
         # Display progress
         print(f"Processing frame {current_frame}/{end_frame}", end='\r')
         current_frame += 1
+
+    df = pd.read_csv('player_positions.csv') # Read the CSV file
+
+    # Create a heatmap image from the first frame of the video
+    cap2 = cv2.VideoCapture(INPUT_VIDEO)
+    ret, first_frame = cap2.read()
+    cap2.release()
+
+    if not ret:
+        print("Error: Could not read the first frame from video.")
+        sys.exit(1)
+
+    first_frame_rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
+    img_height, img_width, _ = first_frame_rgb.shape
+
+    # collecting player positions data
+    x_positions = df['player1_position_x'].tolist() + df['player2_position_x'].tolist()
+    y_positions = df['player1_position_y'].tolist() + df['player2_position_y'].tolist()
+
+    plt.figure(figsize=(12, 6)) # Set the figure size
+    plt.imshow(first_frame_rgb, extent=[0, img_width, img_height, 0])  # coordinate origin is top-left
+    plt.axis('image') # remove unrellevant boarders and labels
+    plt.gca().set_aspect('equal', adjustable='box') #adjust width and height
+
+
+    #draw the heatmap
+    sns.kdeplot(
+        x=x_positions,
+        y=y_positions,
+        fill=True,
+        cmap=cm.jet,
+        bw_adjust= 1,
+        alpha=0.6,
+        levels=100,
+        thresh=0.05
+    )
+
+    # set boarder, labels and colors
+    plt.title('Combined Player Position Heatmap')
+    plt.xlabel('X Position')
+    plt.ylabel('Y Position')
+    plt.colorbar(label='Density')
+
+    # save the heatmap photo
+    plt.savefig('player_position_heatmap.png', dpi=300, bbox_inches='tight', pad_inches=0.5)
 
     # Clean up
     cap.release()
