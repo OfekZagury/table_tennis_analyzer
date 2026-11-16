@@ -44,9 +44,10 @@ class FrameValidator:
             for box in boxes:
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 center_x = (x1 + x2) / 2
+                center_y = (y1 + y2) / 2  # same reference point that is_valid_frame compares against
                 width = x2 - x1
                 height = y2 - y1
-                box_coords.append((center_x, y1, width, height))
+                box_coords.append((center_x, center_y, width, height))
 
             # Sort by x-coordinate
             box_coords.sort(key=lambda x: x[0])
@@ -239,9 +240,10 @@ def parse_scoreboard_text(ocr_text_lines):
 
 
 
-def process_frame(model, frame, frame_number, csv_writer):
+def process_frame(model, frame, frame_number, csv_writer, results=None):
     frame_height, frame_width = frame.shape[:2]
-    results = model.predict(frame, save=False)[0]
+    if results is None:
+        results = model.predict(frame, save=False)[0]
     boxes = results.boxes
     keypoints = results.keypoints.data
 
@@ -249,11 +251,11 @@ def process_frame(model, frame, frame_number, csv_writer):
     if len(results) > 0:
         # Collect box coordinate information
         box_coords = []
-        for box in boxes:
+        for det_idx, box in enumerate(boxes):
             x1, y1, x2, y2 = box.xyxy[0].tolist()
             center_x = (x1 + x2) / 2
             center_y = (y1 + y2) / 2
-            box_coords.append((center_x, center_y, x1, y1, x2, y2))
+            box_coords.append((center_x, center_y, x1, y1, x2, y2, det_idx))
 
         # Sort detections based on center x-coordinate to identify leftmost and rightmost players.
         box_coords.sort(key=lambda x: x[0])
@@ -261,16 +263,16 @@ def process_frame(model, frame, frame_number, csv_writer):
         # Select leftmost and rightmost players.
         players_to_draw = [box_coords[0], box_coords[-1]]
 
-        for i, (center_x, center_y, x1, y1, x2, y2) in enumerate(players_to_draw):
+        for center_x, center_y, x1, y1, x2, y2, det_idx in players_to_draw:
             # Draw bounding box for the player.
             cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)),
                           (0, 255, 0), 2)  # Green box
             # Record the center position.
             player_positions.extend([center_x, center_y])
 
-            # Draw keypoints for the current player.
-            # NOTE: This indexing assumes that the ordering in keypoints matches boxes.
-            player_keypoints = keypoints[i]
+            # Draw keypoints for the current player (same detection index as its box,
+            # not the position after sorting by x).
+            player_keypoints = keypoints[det_idx]
             for kpt in player_keypoints:
                 x, y = int(kpt[0]), int(kpt[1])
                 cv2.circle(frame, (x, y), 3, (0, 0, 255), -1)  # Red circles
@@ -398,7 +400,7 @@ def main():
         if first_frame:
             if frame_validator.set_reference_frame(boxes, frame_width, frame_height):
                 first_frame = False
-                processed_frame = process_frame(model, frame, current_frame, csv_writer)
+                processed_frame = process_frame(model, frame, current_frame, csv_writer, results)
             else:
                 # Write dummy values for invalid first frame
                 csv_writer.writerow([current_frame, 0, 0, 0, 0])
@@ -409,7 +411,7 @@ def main():
 
         # Use enhanced frame validation
         if frame_validator.is_valid_frame(boxes, keypoints, frame_width, frame_height):
-            processed_frame = process_frame(model, frame, current_frame, csv_writer)
+            processed_frame = process_frame(model, frame, current_frame, csv_writer, results)
         else:
             # Write dummy values for invalid frames
             csv_writer.writerow([current_frame, 0, 0, 0, 0])
@@ -437,6 +439,7 @@ def main():
         current_frame += 1
 
     # Read the positions CSV to generate the positional heatmap.
+    csv_file.flush()
     df = pd.read_csv(OUTPUT_CSV)
 
     # Create a heatmap image using the first frame as background.
@@ -453,32 +456,40 @@ def main():
     img_height, img_width, _ = first_frame_rgb.shape
 
     # Collect player positions data for both players.
-    x_positions = df['player1_position_x'].tolist() + df['player2_position_x'].tolist()
-    y_positions = df['player1_position_y'].tolist() + df['player2_position_y'].tolist()
+    # Frames without a valid detection are stored as (0, 0) - leave them out,
+    # otherwise they pull the heatmap towards the top-left corner.
+    p1 = df[(df['player1_position_x'] != 0) | (df['player1_position_y'] != 0)]
+    p2 = df[(df['player2_position_x'] != 0) | (df['player2_position_y'] != 0)]
+    x_positions = p1['player1_position_x'].tolist() + p2['player2_position_x'].tolist()
+    y_positions = p1['player1_position_y'].tolist() + p2['player2_position_y'].tolist()
 
     # Plot and save the positional heatmap.
-    plt.figure(figsize=(12, 6), dpi=300)  # Figure size and resolution
-    plt.imshow(first_frame_rgb, extent=[0, img_width, img_height, 0])  # Display background image with proper extent
-    plt.axis('image')  # Use image axis for proper aspect ratio
-    plt.gca().set_aspect('equal', adjustable='box')
+    if len(x_positions) < 2:
+        print("Warning: not enough player detections to draw a heatmap")
+    else:
+        plt.figure(figsize=(12, 6), dpi=300)  # Figure size and resolution
+        plt.imshow(first_frame_rgb, extent=[0, img_width, img_height, 0])  # Display background image with proper extent
+        plt.axis('image')  # Use image axis for proper aspect ratio
+        plt.gca().set_aspect('equal', adjustable='box')
 
-    # Draw the kernel density estimate (KDE) heatmap with chosen parameters.
-    sns.kdeplot(
-        x=x_positions,
-        y=y_positions,
-        fill=True,
-        cmap=cm.jet,
-        bw_adjust=1,  # Adjust kernel bandwidth (tweak as needed)
-        alpha=0.6,
-        levels=100,
-        thresh=0.05
-    )
+        # Draw the kernel density estimate (KDE) heatmap with chosen parameters.
+        sns.kdeplot(
+            x=x_positions,
+            y=y_positions,
+            fill=True,
+            cmap=cm.jet,
+            bw_adjust=1,  # Adjust kernel bandwidth (tweak as needed)
+            alpha=0.6,
+            levels=100,
+            thresh=0.05
+        )
 
-    plt.title('Combined Player Position Heatmap')
-    plt.xlabel('X Position')
-    plt.ylabel('Y Position')
-    plt.colorbar(label='Density')
-    plt.savefig('player_position_heatmap.png', dpi=300, bbox_inches='tight', pad_inches=0.5)
+        plt.title('Combined Player Position Heatmap')
+        plt.xlabel('X Position')
+        plt.ylabel('Y Position')
+        plt.colorbar(label='Density')
+        plt.savefig('player_position_heatmap.png', dpi=300, bbox_inches='tight', pad_inches=0.5)
+        plt.close()
 
     # Plot the score progression
     try:
@@ -506,5 +517,22 @@ def main():
     print(f"Score data saved to {SCOREBOARD_CSV}")
 
 
+def parse_args():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Pose tracking, position heatmap and score timeline for table tennis videos."
+    )
+    parser.add_argument("--input", default=INPUT_VIDEO, help="Path to the match video (default: input.mp4)")
+    parser.add_argument("--start-frame", type=int, default=START_FRAME, help="First frame to process")
+    parser.add_argument("--end-frame", type=int, default=END_FRAME,
+                        help="Last frame to process, 0 = until the end of the video (default: 600)")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
+    args = parse_args()
+    INPUT_VIDEO = args.input
+    START_FRAME = args.start_frame
+    END_FRAME = args.end_frame
     main()

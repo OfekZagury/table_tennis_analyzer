@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Model weights (downloaded automatically by ultralytics)
+*.pt
+
+# Input video and generated outputs
+*.mp4
+player_positions.csv
+player_scores.csv
+player_position_heatmap.png
+score_progression.png
+
+# IDE
+.idea/
+.vscode/
