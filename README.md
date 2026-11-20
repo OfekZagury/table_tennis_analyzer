@@ -2,7 +2,7 @@
 
 Computer-vision analysis of table tennis match footage: tracks both players with **YOLO11 pose estimation**, draws their skeletons on the video, builds a **court-position heatmap** and reads the on-screen **scoreboard with OCR** to plot how the score develops over the match.
 
-<!-- TODO: add docs/demo.gif (annotated video), docs/heatmap.png and docs/score_progression.png from a real match -->
+**[▶ Demo video](https://ofekzagury.github.io/videos/table-tennis-analyzer.mp4)**: the analyzer run on 45 seconds of a Korea Table Tennis League broadcast, showing the pose skeletons, the skipped camera cuts, the position heatmap and the score timeline (footage credit below).
 
 ## What it produces
 
@@ -61,3 +61,7 @@ The scoreboard region is tuned for broadcasts that show the score in the bottom-
 ## Tech stack
 
 Ultralytics YOLO11 (pose), OpenCV, EasyOCR, pandas, Matplotlib, Seaborn.
+
+## Credits
+
+Demo video match footage: KTTL 한국프로탁구리그 (한국실업탁구연맹), licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0), via [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:%EC%96%91%EC%82%B0%EC%8B%9C%EC%B2%AD_%EC%9D%B4%EC%98%81%EC%9D%80,_%EB%B0%95%EB%AF%BC%EC%A3%BC_vs_%EC%88%98%EC%9B%90%ED%8A%B9%EB%A1%80%EC%8B%9C%EC%B2%AD_%EA%B3%BD%EC%88%98%EC%A7%80,_%EC%9C%A0%EB%8B%A4%ED%98%84_-%ED%92%80%EB%B2%84%EC%A0%84_-_1080.webm); cut and annotated.
